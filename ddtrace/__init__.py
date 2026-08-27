@@ -18,6 +18,7 @@ import ddtrace.internal.telemetry  # noqa: F401,E402
 
 from ._monkey import patch  # noqa: E402
 from ._monkey import patch_all  # noqa: E402
+from .internal import core as _core  # noqa: E402
 from .internal.compat import PYTHON_VERSION_INFO  # noqa: E402
 from .internal.compat import is_at_least_py  # noqa: E402
 from .internal.settings import env  # noqa: E402
