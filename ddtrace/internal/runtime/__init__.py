@@ -28,4 +28,3 @@ __all__ = [
     "MICROVM_RUN_HOOK_PATH",
     "in_aws_lambda_microvm",
 ]
-

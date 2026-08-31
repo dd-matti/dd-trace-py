@@ -1250,6 +1250,7 @@ def test_writer_telemetry_enabled_on_linux(
         "set_git_commit_sha",
         "set_runtime_id",
         "set_client_computed_top_level",
+        "set_runtime_id",
         "set_input_format",
         "set_output_format",
         "enable_telemetry",
@@ -1263,6 +1264,7 @@ def test_writer_telemetry_enabled_on_linux(
         with mock_sys_platform(platform):
             _writer = NativeWriter("http://localhost:8126/v0.5/traces", sync_mode=True)
 
+        mock_builder.set_runtime_id.assert_called_once_with(get_runtime_id())
         if expected_enabled:
             mock_builder.enable_telemetry.assert_called_once_with(60000, get_runtime_id(), config._debug_mode)
         else:
@@ -1329,6 +1331,7 @@ def test_otlp_metric_tags_configured():
         "set_git_commit_sha",
         "set_runtime_id",
         "set_client_computed_top_level",
+        "set_runtime_id",
     ]:
         getattr(mock_builder, method_name).return_value = mock_builder
 

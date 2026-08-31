@@ -149,6 +149,7 @@ def test_microvm_run_hook_refreshes_identity(tracer):
         web.core.reset_listeners(event_name, runtime.maybe_refresh_identity)
         _runtime_id._IDENTITY_REFRESH_HOOK_REFRESHED.clear()
 
+
 def test_middleware(tracer, test_spans):
     app = TestApp(DDWSGIMiddleware(application, tracer=tracer))
     resp = app.get("/")

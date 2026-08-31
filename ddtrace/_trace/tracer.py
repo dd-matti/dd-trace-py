@@ -447,6 +447,10 @@ class Tracer:
             self._post_fork_writer_pending = False
             return True
 
+    def _refresh_runtime_identity(self, _runtime_id: str) -> None:
+        self._recreate(reset_buffer=False)
+        self._store_metadata()
+
     def _recreate(
         self,
         trace_processors: Optional[list[TraceProcessor]] = None,

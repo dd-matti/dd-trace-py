@@ -258,6 +258,7 @@ async def test_microvm_run_hook_refreshes_identity(scope):
         web.core.reset_listeners(event_name, runtime.maybe_refresh_identity)
         _runtime_id._IDENTITY_REFRESH_HOOK_REFRESHED.clear()
 
+
 @pytest.mark.asyncio
 async def test_basic_asgi(scope, test_spans):
     app = TraceMiddleware(basic_app)

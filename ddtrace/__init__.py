@@ -13,12 +13,12 @@ configure_ddtrace_logger()  # noqa: E402
 
 # Enable telemetry writer and excepthook as early as possible to ensure we capture any exceptions from initialization
 from ddtrace.internal.runtime import listen_for_identity_refresh_hooks  # noqa: E402,I001
+from ddtrace.internal.runtime import on_runtime_identity_refresh  # noqa: E402,I001
 from ddtrace.internal.serverless import in_aws_lambda_microvm  # noqa: E402
 import ddtrace.internal.telemetry  # noqa: F401,E402
 
 from ._monkey import patch  # noqa: E402
 from ._monkey import patch_all  # noqa: E402
-from .internal import core as _core  # noqa: E402
 from .internal.compat import PYTHON_VERSION_INFO  # noqa: E402
 from .internal.compat import is_at_least_py  # noqa: E402
 from .internal.settings import env  # noqa: E402
@@ -37,6 +37,8 @@ if in_aws_lambda_microvm():
 # TODO: Deprecate accessing tracer from ddtrace.__init__ module in v4.0
 if env.get("_DD_GLOBAL_TRACER_INIT", "true").lower() in ("1", "true"):
     from ddtrace.trace import tracer  # noqa: F401
+
+    on_runtime_identity_refresh(tracer._refresh_runtime_identity)
 
 # Initialize DSM support and register DSM handlers (if enabled)
 import ddtrace.internal.datastreams as _  # noqa: E402, F401
