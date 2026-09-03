@@ -660,7 +660,6 @@ assert runtime.get_runtime_id() == runtime_id
     _, err, status, _ = run_python_code_in_subprocess(code, env=env)
     assert status == 0, err
 
-
 def test_refresh_identity_notifies_refresh_subscribers(run_python_code_in_subprocess):
     code = """
 from ddtrace.internal import runtime
