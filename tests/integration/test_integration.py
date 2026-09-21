@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import itertools
 import os
 import sys
@@ -47,7 +46,7 @@ t.join()
 @pytest.mark.skip("FIXME: This test is broken. The uds socket does not exist.")
 @parametrize_with_all_encodings(env={"DD_TRACE_AGENT_URL": "unix:///tmp/ddagent/trace.sock"})
 def test_single_trace_uds():
-    import mock
+    from unittest import mock
 
     from ddtrace.trace import tracer as t
 
@@ -61,8 +60,7 @@ def test_single_trace_uds():
 @parametrize_with_all_encodings(env={"DD_TRACE_AGENT_URL": "unix:///tmp/ddagent/nosockethere"})
 def test_uds_wrong_socket_path():
     import os
-
-    import mock
+    from unittest import mock
 
     from ddtrace.internal.writer.writer import NativeTraceBuffer
     from ddtrace.trace import tracer as t
@@ -103,8 +101,7 @@ def test_uds_wrong_socket_path():
 )
 def test_payload_too_large():
     import os
-
-    import mock
+    from unittest import mock
 
     from ddtrace.trace import tracer as t
     from tests.integration.test_integration import FOUR_KB
@@ -137,7 +134,7 @@ def test_payload_too_large():
 
 @parametrize_with_all_encodings()
 def test_large_payload_is_sent_without_warning_logs():
-    import mock
+    from unittest import mock
 
     from ddtrace.trace import tracer as t
 
@@ -153,7 +150,7 @@ def test_large_payload_is_sent_without_warning_logs():
 
 @parametrize_with_all_encodings()
 def test_child_spans_do_not_cause_warning_logs():
-    import mock
+    from unittest import mock
 
     from ddtrace.trace import tracer as t
 
@@ -172,7 +169,7 @@ def test_child_spans_do_not_cause_warning_logs():
 @skip_if_native_buffer("health metrics are emitted by libdatadog directly, not via writer.dogstatsd")
 @parametrize_with_all_encodings(env={"DD_TRACE_HEALTH_METRICS_ENABLED": "true"})
 def test_metrics():
-    import mock
+    from unittest import mock
 
     from ddtrace.trace import tracer as t
     from tests.utils import override_global_config
@@ -220,7 +217,7 @@ def test_metrics():
     env={"DD_TRACE_HEALTH_METRICS_ENABLED": "true", "DD_TRACE_PARTIAL_FLUSH_ENABLED": "false"}
 )
 def test_metrics_partial_flush_disabled():
-    import mock
+    from unittest import mock
 
     from ddtrace.trace import tracer as t
     from tests.utils import override_global_config
@@ -257,7 +254,7 @@ def test_metrics_partial_flush_disabled():
 
 @parametrize_with_all_encodings(check_logs=False)
 def test_single_trace_too_large():
-    import mock
+    from unittest import mock
 
     from ddtrace.internal.writer.writer import NativeTraceBuffer
     from ddtrace.trace import tracer as t
@@ -301,7 +298,7 @@ def test_single_trace_too_large():
     env={"DD_TRACE_PARTIAL_FLUSH_ENABLED": "false", "DD_TRACE_WRITER_BUFFER_SIZE_BYTES": str(8 << 20)}
 )
 def test_single_trace_too_large_partial_flush_disabled():
-    import mock
+    from unittest import mock
 
     from ddtrace.trace import tracer as t
     from tests.utils import AnyInt
@@ -324,8 +321,7 @@ def test_single_trace_too_large_partial_flush_disabled():
 )
 def test_trace_generates_error_logs_when_trace_agent_url_invalid():
     import os
-
-    import mock
+    from unittest import mock
 
     from ddtrace.internal.writer.writer import NativeTraceBuffer
     from ddtrace.trace import tracer as t
@@ -358,7 +354,7 @@ def test_trace_generates_error_logs_when_trace_agent_url_invalid():
 @skip_if_testagent
 @pytest.mark.subprocess(err=None)
 def test_trace_with_invalid_payload_generates_error_log():
-    import mock
+    from unittest import mock
 
     from tests.integration.utils import send_invalid_payload_and_get_logs
 
@@ -379,7 +375,7 @@ def test_trace_with_invalid_payload_generates_error_log():
 @skip_if_testagent
 @pytest.mark.subprocess(env={"_DD_TRACE_WRITER_LOG_ERROR_PAYLOADS": "true", "DD_TRACE_API_VERSION": "v0.5"}, err=None)
 def test_trace_with_invalid_payload_logs_payload_when_LOG_ERROR_PAYLOADS():
-    import mock
+    from unittest import mock
 
     from tests.integration.utils import send_invalid_payload_and_get_logs
 
@@ -418,7 +414,7 @@ def test_trace_with_failing_encoder_generates_error_log():
 @skip_if_testagent
 @pytest.mark.subprocess(err=None)
 def test_api_version_downgrade_generates_no_warning_logs():
-    import mock
+    from unittest import mock
 
     from ddtrace.internal.utils.http import Response
     from ddtrace.trace import tracer as t
@@ -435,15 +431,15 @@ def test_api_version_downgrade_generates_no_warning_logs():
 
 def test_application_does_not_deadlock_when_parent_span_closes_before_child(run_python_code_in_subprocess):
     for logs_injection, debug_mode, patch_logging in itertools.product([True, False], repeat=3):
-        close_parent_span_before_child = """
+        close_parent_span_before_child = f"""
 import ddtrace
-ddtrace.patch(logging={})
+ddtrace.patch(logging={str(patch_logging)})
 
 s1 = ddtrace.tracer.trace("1")
 s2 = ddtrace.tracer.trace("2")
 s1.finish()
 s2.finish()
-""".format(str(patch_logging))
+"""
 
         env = os.environ.copy()
         env.update(
@@ -548,7 +544,7 @@ else:
 
 @parametrize_with_all_encodings(env={"DD_TRACE_PARTIAL_FLUSH_MIN_SPANS": "2"}, out=None)
 def test_partial_flush_log():
-    import mock
+    from unittest import mock
 
     from ddtrace.trace import tracer as t
 
