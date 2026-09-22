@@ -17,6 +17,8 @@
 #include "echion/vm.h"
 
 #include <cmath>
+#include <csignal>
+#include <dlfcn.h>
 #include <string_view>
 #include <utility>
 
@@ -1022,10 +1024,15 @@ stack_uninstall_segv_handler(PyObject* Py_UNUSED(self), PyObject* Py_UNUSED(args
 {
     // Temporarily remove our SIGSEGV/SIGBUS handlers, restoring the saved
     // previous handlers. Call this before letting another component (e.g.,
-    // faulthandler) install its own handler so it doesn't record ours as its
-    // previous handler (which would create a signal-handler cycle).
+    // faulthandler or crashtracker) install its own handler so it doesn't
+    // record ours as its previous handler (which would create a cycle).
     // Follow with stack_reinstall_segv_handler to reinstall on top.
-    if (fast_copy_active) {
+    //
+    // Gate on ownership, not fast_copy_active: warmup clears the latter while
+    // the handlers stay installed. A coordinated crashtracker handoff during
+    // that window must still uninstall or crashtracker records us as previous
+    // and a no-op reinstall leaves _native.so on SIGSEGV.
+    if (segv_handler_installed()) {
         uninstall_segv_handler();
     }
     Py_RETURN_NONE;
@@ -1034,14 +1041,40 @@ stack_uninstall_segv_handler(PyObject* Py_UNUSED(self), PyObject* Py_UNUSED(args
 static PyObject*
 stack_reinstall_segv_handler(PyObject* Py_UNUSED(self), PyObject* Py_UNUSED(args))
 {
-    // Reinstall SIGSEGV/SIGBUS handlers if fast_copy (safe_memcpy) is active.
-    // This is used to reclaim the handler after another component (e.g., Python's
-    // faulthandler module) overwrites it. Our handler chains to the previous one
-    // for non-recovery faults, so both systems coexist correctly.
-    if (fast_copy_active) {
+    // Reinstall SIGSEGV/SIGBUS handlers if we initialized the catcher
+    // (including during warmup, when fast_copy_active is false). Used to
+    // finish a coordinated handoff after uninstall.
+    if (safe_memcpy_initialized) {
         init_segv_catcher();
     }
     Py_RETURN_NONE;
+}
+
+static PyObject*
+stack_signal_handler_dli_fname(PyObject* Py_UNUSED(self), PyObject* args)
+{
+    // Test-only: dladdr the live SIGSEGV/SIGBUS disposition and return its
+    // shared-object path, or None for SIG_DFL/SIG_IGN/unknown.
+    int signum = 0;
+    if (!PyArg_ParseTuple(args, "i", &signum)) {
+        return nullptr;
+    }
+
+    struct sigaction current
+    {};
+    if (sigaction(signum, nullptr, &current) != 0) {
+        Py_RETURN_NONE;
+    }
+    void* addr = ((current.sa_flags & SA_SIGINFO) != 0) ? reinterpret_cast<void*>(current.sa_sigaction)
+                                                        : reinterpret_cast<void*>(current.sa_handler);
+    if (addr == nullptr || addr == reinterpret_cast<void*>(SIG_DFL) || addr == reinterpret_cast<void*>(SIG_IGN)) {
+        Py_RETURN_NONE;
+    }
+    Dl_info info{};
+    if (dladdr(addr, &info) == 0 || info.dli_fname == nullptr) {
+        Py_RETURN_NONE;
+    }
+    return PyUnicode_FromString(info.dli_fname);
 }
 
 static PyObject*
@@ -1221,6 +1254,10 @@ static PyMethodDef stack_methods[] = {
       stack_segv_handler_installed,
       METH_NOARGS,
       "Return True if ddtrace's handler is the currently installed disposition for SIGSEGV and SIGBUS" },
+    { "_signal_handler_dli_fname",
+      stack_signal_handler_dli_fname,
+      METH_VARARGS,
+      "Test-only: return the dladdr path of the live handler for the given signal, or None" },
     // Sampling pause/resume for safe signal handler swapping
     { "pause_sampling",
       stack_pause_sampling,

@@ -1,0 +1,5 @@
+---
+fixes:
+  - |
+    profiling: Fixes an issue where crash tracking could take over process
+    fault handlers when started during profiler startup.

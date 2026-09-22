@@ -43,6 +43,10 @@ def segv_handler_installed() -> bool:
     """
     ...
 
+def _signal_handler_dli_fname(signum: int) -> Optional[str]:
+    """Test-only: dladdr path of the live handler for signum, or None."""
+    ...
+
 # span <-> profile association
 def link_span(
     span_id: int,

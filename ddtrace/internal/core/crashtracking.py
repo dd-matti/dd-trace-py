@@ -4,7 +4,9 @@ import os
 import platform
 import sys
 import traceback
+from types import ModuleType
 from types import TracebackType
+from typing import Callable
 from typing import Optional
 
 from ddtrace import config
@@ -254,11 +256,69 @@ def is_started() -> bool:
     return crashtracker_status() == CrashtrackerStatus.Initialized
 
 
+def _run_with_stack_handler_handoff(action: Callable[[], None]) -> None:
+    # If the stack profiler's SIGSEGV/SIGBUS recovery handler is already
+    # installed (i.e. the profiler started before crashtracking), momentarily
+    # uninstall it so the crashtracker records the real underlying handler as
+    # its "previous" rather than the profiler's handler. We reinstall the
+    # profiler's handler on top afterwards, yielding a linear handler chain
+    # (profiler -> crashtracker -> default) with no cycle. We only touch the
+    # stack module if it is already imported: importing it here would load the
+    # native extension and install signal handlers even when profiling is off.
+    #
+    # Pause the sampler for the same reason as _faulthandler: an unpaused
+    # sampling loop can observe the transient uninstall as a foreign
+    # takeover and permanently fall back to the syscall copy.
+    #
+    # Reinstall only if we uninstalled. Reinstalling without uninstall after
+    # crashtracker_init records us as previous and creates a handler cycle.
+    # Skip the swap entirely when we do not own the handlers so a real
+    # foreign owner (abseil/torch, PROF-14568) is not overwritten.
+    stack_mod: Optional[ModuleType] = sys.modules.get("ddtrace.internal.datadog.profiling.stack")
+    pause_result: Optional[bool] = None
+    uninstalled: bool = False
+    if stack_mod is not None:
+        try:
+            pause_result = stack_mod.pause_sampling()
+        except Exception:  # nosec: B110
+            pause_result = None
+        if pause_result is not None:
+            try:
+                owned: bool = bool(stack_mod.segv_handler_installed())
+            except Exception:  # nosec: B110
+                owned = False
+            if owned:
+                try:
+                    stack_mod.uninstall_segv_handler()
+                    uninstalled = True
+                except Exception:  # nosec: B110
+                    pass
+    try:
+        action()
+    finally:
+        if uninstalled and stack_mod is not None:
+            try:
+                stack_mod.reinstall_segv_handler()
+            except Exception:  # nosec: B110
+                pass
+        if stack_mod is not None and pause_result is True:
+            try:
+                stack_mod.resume_sampling()
+            except Exception:  # nosec: B110
+                pass
+
+
 def start(additional_tags: Optional[dict[str, str]] = None) -> bool:
     if not is_available:
         return False
     if not crashtracker_config.enabled:
         return False
+    # Native crashtracker_init is Once-guarded and does not re-register
+    # handlers on a second call. Skip the Python handoff too: uninstall +
+    # no-op init + reinstall is wasted work, and a second forksafe.register
+    # would stack another fork handler.
+    if is_started():
+        return True
 
     try:
         config, receiver_config, metadata = _get_args(additional_tags)
@@ -266,37 +326,25 @@ def start(additional_tags: Optional[dict[str, str]] = None) -> bool:
             log.error("Failed to start crashtracker: failed to construct crashtracker configuration")
             return False
 
-        # If the stack profiler's SIGSEGV/SIGBUS recovery handler is already
-        # installed (i.e. the profiler started before crashtracking), momentarily
-        # uninstall it so the crashtracker records the real underlying handler as
-        # its "previous" rather than the profiler's handler. We reinstall the
-        # profiler's handler on top afterwards, yielding a linear handler chain
-        # (profiler -> crashtracker -> default) with no cycle. We only touch the
-        # stack module if it is already imported: importing it here would load the
-        # native extension and install signal handlers even when profiling is off.
-        stack_mod = sys.modules.get("ddtrace.internal.datadog.profiling.stack")
-        if stack_mod is not None:
-            try:
-                stack_mod.uninstall_segv_handler()
-            except Exception:  # nosec: B110
-                pass
-        crashtracker_init(config, receiver_config, metadata)
-        excepthook.register(_unhandled_exception_reporter)
+        def _init_crashtracker() -> None:
+            crashtracker_init(config, receiver_config, metadata)
+            excepthook.register(_unhandled_exception_reporter)
 
-        if stack_mod is not None:
-            try:
-                stack_mod.reinstall_segv_handler()
-            except Exception:  # nosec: B110
-                pass
+        _run_with_stack_handler_handoff(_init_crashtracker)
 
-        def crashtracker_fork_handler():
+        def crashtracker_fork_handler() -> None:
             # We recreate the args here mainly to pass updated runtime_id after
-            # fork
-            config, receiver_config, metadata = _get_args(additional_tags)
-            if config is None or receiver_config is None or metadata is None:
+            # fork. crashtracker_on_fork re-installs its handlers; hand off the
+            # same way as start() so we stay on top and crashtracker stays previous.
+            fork_config, fork_receiver_config, fork_metadata = _get_args(additional_tags)
+            if fork_config is None or fork_receiver_config is None or fork_metadata is None:
                 log.error("Failed to restart crashtracker after fork: failed to construct crashtracker configuration")
                 return
-            crashtracker_on_fork(config, receiver_config, metadata)
+
+            def _reinit_after_fork() -> None:
+                crashtracker_on_fork(fork_config, fork_receiver_config, fork_metadata)
+
+            _run_with_stack_handler_handoff(_reinit_after_fork)
 
         forksafe.register(crashtracker_fork_handler)
     except Exception:
