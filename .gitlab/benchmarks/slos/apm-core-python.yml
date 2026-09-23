@@ -93,6 +93,18 @@ experiments:
           - name: errortrackingmonitoring-multiplexer_active
             thresholds:
               - execution_time < 0.0019 ms
+          - name: errortrackingmonitoring-direct_raise_passive
+            thresholds:
+              - execution_time < 0.0007 ms
+          - name: errortrackingmonitoring-direct_raise_active
+            thresholds:
+              - execution_time < 0.0018 ms
+          - name: errortrackingmonitoring-multiplexer_raise_passive
+            thresholds:
+              - execution_time < 0.0008 ms
+          - name: errortrackingmonitoring-multiplexer_raise_active
+            thresholds:
+              - execution_time < 0.0019 ms
           # errortrackingdjangosimple
           - name: errortrackingdjangosimple-baseline
             thresholds:

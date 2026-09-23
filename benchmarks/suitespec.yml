@@ -356,6 +356,8 @@ suites:
       - '@core'
       - '@vendor'
       - '@errortracking'
+      - ddtrace/profiling/collector/_exception.pyx
+      - ddtrace/profiling/collector/exception.py
       - benchmarks/errortracking_monitoring/*
       - benchmarks/suitespec.yml
     cpus_per_run: 1
