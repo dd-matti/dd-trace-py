@@ -169,6 +169,37 @@ def test_write_stamps_the_client_keep_rate():
     assert span._get_numeric_attribute("_dd.tracer_kr") == 1.0
 
 
+class _MetricsStubBuffer:
+    """Stands in for the native buffer, to hand queue_metrics() a chosen (dropped, queued) pair.
+
+    queue_metrics() is implemented on the PyO3 TraceBuffer class, so mock.patch.object can't stub
+    the method on the instance: PyO3 attributes are read-only from Python.
+    """
+
+    def __init__(self, dropped, queued):
+        self._metrics = (dropped, queued)
+
+    def queue_metrics(self):
+        return self._metrics
+
+
+def test_set_drop_rate_reflects_libdatadogs_dropped_span_counter():
+    # queue_metrics() is libdatadog's own full-buffer drop counter, reset on read; _set_drop_rate()
+    # must be the only reader, and write() must stamp _dd.tracer_kr from the resulting average.
+    with buffer_writer() as writer:
+        native_buffer = writer._buffer
+        writer._buffer = _MetricsStubBuffer(4, 10)
+        try:
+            writer._set_drop_rate()
+        finally:
+            writer._buffer = native_buffer
+        assert writer._drop_sma.get() == pytest.approx(0.4)
+
+        span = _finished_span()
+        writer.write([span])
+    assert span._get_numeric_attribute("_dd.tracer_kr") == pytest.approx(0.6)
+
+
 @pytest.mark.parametrize(
     "sabotage",
     [

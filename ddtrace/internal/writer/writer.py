@@ -1330,8 +1330,8 @@ class NativeTraceBuffer(TraceWriter, AgentWriterInterface):
     send. There is no periodic thread and no Python-side flush scheduling.
 
     This class owns configuration and lifecycle only. Every span goes straight through to the native
-    buffer, which is why there is no Python-side accounting here: health metrics come from libdatadog,
-    not from this writer.
+    buffer; the one exception is `_dd.tracer_kr`, which the backend needs on the wire and which
+    libdatadog does not stamp itself, so this writer polls the buffer's own drop counter for it.
 
     The flag reaches this writer through the agent path of ``create_trace_writer`` only. An agentless
     or log-writer configuration returns before that branch, so the flag is inert there and the tracer
@@ -1367,6 +1367,7 @@ class NativeTraceBuffer(TraceWriter, AgentWriterInterface):
         # is what tells the child apart from a reconfiguration of this process.
         self._pid = os.getpid()
         self._stopped = False
+        self._drop_sma = SimpleMovingAverage(DEFAULT_SMA_WINDOW)
         self._buffer = self._create_buffer()
 
     def _create_buffer(self) -> "native.TraceBuffer":
@@ -1417,9 +1418,9 @@ class NativeTraceBuffer(TraceWriter, AgentWriterInterface):
         if not spans:
             return
         # `_dd.tracer_kr` is wire data, not a health metric: the backend scales its dropped-trace
-        # estimate by it. A full keep rate is what the value means while nothing on this path drops
-        # spans; libdatadog's own full-buffer count would turn it into a real rate.
-        spans[0]._set_attribute(_KEEP_SPANS_RATE_KEY, 1.0)
+        # estimate by it. Stamp the moving average from the last _set_drop_rate() poll of
+        # libdatadog's own full-buffer counter, mirroring HTTPWriter._set_keep_rate.
+        spans[0]._set_attribute(_KEEP_SPANS_RATE_KEY, 1.0 - self._drop_sma.get())
 
         # Origin lives on the Context, not on the individual spans, so read it here and let the native
         # side stamp `_dd.origin` on each span as it builds the wire form. `context` is a Span
@@ -1430,6 +1431,11 @@ class NativeTraceBuffer(TraceWriter, AgentWriterInterface):
         if reason:
             self._log_write_reason(reason)
         self._deliver_agent_response()
+
+    def _set_drop_rate(self) -> None:
+        # libdatadog resets both counters on read, so this must be the only reader.
+        spans_dropped, spans_queued = self._buffer.queue_metrics()
+        self._drop_sma.set(spans_dropped, spans_queued)
 
     def _log_write_reason(self, reason: str) -> None:
         """Log why the buffer did not take every span, at a level that matches the loss.
@@ -1461,6 +1467,8 @@ class NativeTraceBuffer(TraceWriter, AgentWriterInterface):
             if raise_exc:
                 raise
             self._log_flush_failure(exc)
+        finally:
+            self._set_drop_rate()
         self._deliver_agent_response()
 
     def _log_flush_failure(self, exc: Exception) -> None:
