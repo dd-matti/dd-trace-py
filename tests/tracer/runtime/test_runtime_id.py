@@ -96,6 +96,7 @@ def test_runtime_id_callback_failure_does_not_block_other_callbacks():
     seen = []
 
     def on_change_raises(new_id):
+        seen.append(("raises", new_id))
         raise RuntimeError("callback failed")
 
     def on_change(new_id):
@@ -111,7 +112,11 @@ def test_runtime_id_callback_failure_does_not_block_other_callbacks():
     runtime.refresh_identity()
 
     runtime_id = runtime.get_runtime_id()
-    assert seen == [("change", runtime_id), ("refresh", runtime_id)]
+    assert ("raises", runtime_id) in seen
+    assert [entry for entry in seen if entry[0] != "raises"] == [
+        ("change", runtime_id),
+        ("refresh", runtime_id),
+    ]
 
 
 @pytest.mark.subprocess(env={"PYTHONWARNINGS": "ignore::DeprecationWarning"})
