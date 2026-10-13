@@ -188,6 +188,22 @@ def test_routed_span_telemetry_keeps_span_attributes(llmobs):
     assert tags["is_root_span"] == "1"
 
 
+def test_export_span_after_routed_span_finishes_returns_sent_trace_id(llmobs, _llmobs_backend):
+    # Exported IDs join evaluations to the span, so they must match what the tenant received.
+    _, reqs = _llmobs_backend
+    initial_count = len(reqs)
+
+    with llmobs_service.routing_context(dd_api_key=TENANT_A_KEY):
+        with llmobs.llm(name="routed", model_name="gpt-4") as span:
+            pass
+    exported = llmobs_service.export_span(span)
+    llmobs_service.flush()
+
+    ((_, event),) = _sent_events(reqs, initial_count, 1)["routed"]
+    assert exported["trace_id"] == event["trace_id"]
+    assert exported["span_id"] == event["span_id"]
+
+
 @pytest.mark.parametrize(
     "ddtrace_global_config", [dict(_llmobs_sampling_rules='[{"tags": {"tier": "gold"}, "sample_rate": 0}]')]
 )
